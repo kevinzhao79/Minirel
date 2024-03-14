@@ -62,7 +62,7 @@ BufMgr::~BufMgr() {
     delete [] bufPool;
 }
 
-
+//TODO: Soft Liampisan
 const Status BufMgr::allocBuf(int & frame) 
 {
 
@@ -73,7 +73,7 @@ const Status BufMgr::allocBuf(int & frame)
 
 }
 
-	
+//TODO: Nott Laoaroon
 const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 {
 
@@ -83,7 +83,7 @@ const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 
 }
 
-
+//TODO: Nott Laoaroon
 const Status BufMgr::unPinPage(File* file, const int PageNo, 
 			       const bool dirty) 
 {
@@ -94,6 +94,7 @@ const Status BufMgr::unPinPage(File* file, const int PageNo,
 
 }
 
+//TODO: Kevin Zhao
 const Status BufMgr::allocPage(File* file, int& pageNo, Page*& page) 
 {
 
