@@ -98,11 +98,40 @@ const Status BufMgr::unPinPage(File* file, const int PageNo,
 const Status BufMgr::allocPage(File* file, int& pageNo, Page*& page) 
 {
 
+    int pageNum, frameNum;
+    Status stat;
+    Error err;
 
+    stat = file->allocatePage(pageNum);
 
+    if (stat != OK) {
+        cout << "BufMgr::allocPage(), file->allocatePage()";
+        err.print(stat);
+        return stat;
+    }
 
+    stat = allocBuf(frameNum);
 
+    if (stat != OK) {
+        cout << "BufMgr::allocPage(), allocBuf()";
+        err.print(stat);
+        return stat;
+    }
 
+    stat = hashTable->insert(file, pageNum, frameNum);
+
+    if (stat != OK) {
+        cout << "BufMgr::allocPage(), hashTable->insert()";
+        err.print(stat);
+        return stat;
+    }
+
+    bufTable->Set(file, pageNum);
+
+    pageNo = pageNum;
+    page = (bufPool + frameNum * (sizeof(Page)));
+
+    return OK;
 
 }
 
