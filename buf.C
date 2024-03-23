@@ -65,11 +65,45 @@ BufMgr::~BufMgr() {
 //TODO: Soft Liampisan
 const Status BufMgr::allocBuf(int & frame) 
 {
+   int iterations = 0; 
+    do {
+        //Advance clock pointer
+        clockHand = (clockHand + 1) % numBufs;
+        //Check valid bit
+        if (bufTable[clockHand].valid) { 
+            //Check refBit
+            if (bufTable[clockHand].refbit) { 
+                bufTable[clockHand].refbit = false;
+                continue;
+            } else { 
+                if (bufTable[clockHand].pinCnt > 0) { 
+                    continue;
+                }
+                //Page is not pinned, remove from hashtable first
+                hashTable->remove(bufTable[clockHand].file, bufTable[clockHand].pageNo);
 
-
-
-
-
+                //Check dirty bit
+                if (bufTable[clockHand].dirty) { 
+                    // Flush page to disk
+                    if (bufTable[clockHand].file->writePage(bufTable[clockHand].pageNo, &(bufPool[clockHand])) != OK) {
+                        return UNIXERR;
+                    }
+                    bufTable[clockHand].dirty = false; 
+                }
+                frame = clockHand;
+                bufTable[clockHand].Clear(); 
+                return OK;
+            }
+            //valid bit not set
+        } else { 
+            frame = clockHand;
+            bufTable[clockHand].Clear(); 
+            return OK;
+        }
+        iterations++;
+    } while (iterations < numBufs * 2);
+    //All buffer frames are pinned, return BUFFEREXCEEDED
+    return BUFFEREXCEEDED;
 
 }
 
