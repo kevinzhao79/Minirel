@@ -67,6 +67,7 @@ const Status BufMgr::allocBuf(int & frame)
 {
    int iterations = 0; 
     do {
+        iterations++;
         //Advance clock pointer
         clockHand = (clockHand + 1) % numBufs;
         //Check valid bit
@@ -100,7 +101,6 @@ const Status BufMgr::allocBuf(int & frame)
             bufTable[clockHand].Clear(); 
             return OK;
         }
-        iterations++;
     } while (iterations < numBufs * 2);
     //All buffer frames are pinned, return BUFFEREXCEEDED
     return BUFFEREXCEEDED;
@@ -112,7 +112,41 @@ const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 {
 
 
+    int frameNo;
+    if(hashTable->lookup(file, PageNo, frameNo) == HASHNOTFOUND) {
+        // In this case, the page is not in the buffer
+        
+        // Allocate a buffer frame
+        Status result = allocBuf(frameNo);
+        // If the status is not OK (i.e. cant allocate new buffer), then return what the error is
+        if (result != OK) {
+            return result;
+        }
 
+        // Read the page from disk into the buffer frame
+        result = file->readPage(PageNo, &bufPool[frameNo]);
+        if (result != OK) {
+            return result;
+        }
+        // Insert the page into the hash table
+        result = hashTable->insert(file, PageNo, frameNo);
+        if(result != OK) {
+            return result;
+        }
+        // Set the description of the buffer properly
+        bufTable[frameNo].Set(file, PageNo);
+        // Return the pointer to the page on the buffer
+        page = &bufPool[frameNo];
+    } else {
+        // In this case, the page is in the buffer, at frameNo
+        // Set the appropriate refbit
+        bufTable[frameNo].refbit = 1;
+        // Increment the pincnt
+        bufTable[frameNo].pinCnt += 1;
+        // Return the pointer to the page of the buffer
+        page = &bufPool[frameNo];
+    }
+    return OK;
 
 
 }
@@ -123,7 +157,28 @@ const Status BufMgr::unPinPage(File* file, const int PageNo,
 {
 
 
-
+    int frameNo;
+    // Check if the page is on the buffer
+    if(hashTable->lookup(file, PageNo, frameNo) == HASHNOTFOUND) {
+        // In this case, the page is not in the buffer
+        return HASHNOTFOUND;
+    } else {
+        // In this case, the page is in the buffer, at frameNo
+        // Check if it is already pinned
+        if (bufTable[frameNo].pinCnt > 0) {
+            // In this case, the page is currently pinned
+            // Decrement the pinCnt
+            bufTable[frameNo].pinCnt -= 1;
+            // If dirty, then set the dirty bit
+            if(dirty) {
+                bufTable[frameNo].dirty = true;
+            }
+        } else {
+            // In this case, the page is not currently pinned
+            return PAGENOTPINNED;
+        }
+    }
+    return OK;
 
 
 }
@@ -160,10 +215,10 @@ const Status BufMgr::allocPage(File* file, int& pageNo, Page*& page)
         return stat;
     }
 
-    bufTable->Set(file, pageNum);
+    bufTable[frameNum].Set(file, pageNum);
 
     pageNo = pageNum;
-    page = (bufPool + frameNum * (sizeof(Page)));
+    page = &bufPool[frameNum];
 
     return OK;
 
