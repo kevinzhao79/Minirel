@@ -1,0 +1,3 @@
+Soft Liampisan: Implementing allocBuf
+Nott Laoaron: Implementing readPage and unPinPage
+Kevin Zhao: Implementing allocPage
