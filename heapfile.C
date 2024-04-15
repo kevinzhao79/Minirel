@@ -19,17 +19,50 @@ const Status createHeapFile(const string fileName)
 		// file doesn't exist. First create it and allocate
 		// an empty header page and data page.
 		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
+		status = db.createFile(fileName);
+        if (status != OK) {
+            return status;
+        }
+        status = db.openFile(fileName, file);
+        if (status != OK) {
+            return status;
+        }
+
+        // create header page
+        Page* headerPage;
+        status = bufMgr->allocPage(file, hdrPageNo, headerPage);
+        if (status != OK) {
+            return status;
+        }
+        FileHdrPage* hdrPage = (FileHdrPage *) newPage;
+        
+
+        // create data page
+        status = bufMgr->allocPage(file, newPageNo, newPage);
+        if (status != OK) {
+            return status;
+        }
+
+        newPage->init(newPageNo);
+        hdrPage->firstPage = newPageNo;
+        hdrPage->lastPage = newPageNo;
+
+        // unpin header and data pages
+        status = bufMgr->unPinPage(file, hdrPageNo, true);
+        if (status != OK) {
+            return status;
+        }
+
+        status = bufMgr->unPinPage(file, newPageNo, true);
+        if (status != OK) {
+            return status;
+        }
+
+        // flush and close files
+        status = bufMgr->flushFile(file);
+        if (status != OK) {
+            return status;
+        }
 		
     }
     return (FILEEXISTS);
@@ -53,16 +86,32 @@ HeapFile::HeapFile(const string & fileName, Status& returnStatus)
     // open the file and read in the header page and the first data page
     if ((status = db.openFile(fileName, filePtr)) == OK)
     {
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
+
+        // do i need this?
+        int pageNumber;
+        status = bufMgr->readPage(filePtr, pageNumber, pagePtr);
+        if (status != OK) {
+            cerr << "Error in assigning pagePtr to be the header page";
+            returnStatus = status;
+        }
+
+        status = filePtr->getFirstPage(pageNumber);
+        if (status != OK) {
+            cerr << "Error in grabbing the pageNo of the header page";
+            returnStatus = status;
+        }
+
+        // assign first page to be the header page
+		headerPage = (FileHdrPage *) pagePtr;
+
+        // assign curPage to be the first page
+        curPageNo = headerPage->firstPage;
+        status = bufMgr->readPage(filePtr, curPageNo, curPage);
+        if (status != OK) {
+            cerr << "Error in assigning curPage to be the first page in hdrPage";
+            returnStatus = status;
+        }
+        curRec = NULLRID;
 		
     }
     else
