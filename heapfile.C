@@ -1,6 +1,7 @@
 #include "heapfile.h"
 #include "error.h"
 
+// TODO: Kevin Zhao
 // routine to create a heapfile
 const Status createHeapFile(const string fileName)
 {
@@ -40,6 +41,7 @@ const Status destroyHeapFile(const string fileName)
 	return (db.destroyFile (fileName));
 }
 
+//TODO: Kevin Zhao
 // constructor opens the underlying file
 HeapFile::HeapFile(const string & fileName, Status& returnStatus)
 {
@@ -115,6 +117,7 @@ const int HeapFile::getRecCnt() const
 // is unpinned and the required page is read into the buffer pool
 // and pinned.  returns a pointer to the record via the rec parameter
 
+//TODO: Soft Liampisan
 const Status HeapFile::getRecord(const RID & rid, Record & rec)
 {
     Status status;
@@ -215,7 +218,7 @@ const Status HeapFileScan::resetScan()
     return OK;
 }
 
-
+//TODO: Nott Laoaroon
 const Status HeapFileScan::scanNext(RID& outRid)
 {
     Status 	status = OK;
@@ -342,6 +345,7 @@ InsertFileScan::~InsertFileScan()
     }
 }
 
+//TODO: Soft Liampisan
 // Insert a record into the file
 const Status InsertFileScan::insertRecord(const Record & rec, RID& outRid)
 {
