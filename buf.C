@@ -60,185 +60,139 @@ BufMgr::~BufMgr() {
 
     delete [] bufTable;
     delete [] bufPool;
+    delete hashTable;
+
 }
 
-//TODO: Soft Liampisan
+
 const Status BufMgr::allocBuf(int & frame) 
 {
-   int iterations = 0; 
-    do {
-        iterations++;
-        //Advance clock pointer
-        clockHand = (clockHand + 1) % numBufs;
-        //Check valid bit
-        if (bufTable[clockHand].valid) { 
-            //Check refBit
-            if (bufTable[clockHand].refbit) { 
-                bufTable[clockHand].refbit = false;
-                continue;
-            } else { 
-                if (bufTable[clockHand].pinCnt > 0) { 
-                    continue;
-                }
-                //Page is not pinned, remove from hashtable first
-                hashTable->remove(bufTable[clockHand].file, bufTable[clockHand].pageNo);
+    // perform first part of clock algorithm to search for 
+    // open buffer frame
+    // Assumes non-concurrent access to buffer manager
+    Status status = OK;
+    int numScanned = 0;
+    bool found = 0;
+    while (numScanned < 2*numBufs)
+    {
+        // advance the clock
+        advanceClock();
+        numScanned++;
 
-                //Check dirty bit
-                if (bufTable[clockHand].dirty) { 
-                    // Flush page to disk
-                    if (bufTable[clockHand].file->writePage(bufTable[clockHand].pageNo, &(bufPool[clockHand])) != OK) {
-                        return UNIXERR;
-                    }
-                    bufTable[clockHand].dirty = false; 
-                }
-                frame = clockHand;
-                bufTable[clockHand].Clear(); 
-                return OK;
-            }
-            //valid bit not set
-        } else { 
-            frame = clockHand;
-            bufTable[clockHand].Clear(); 
-            return OK;
+        // if invalid, use frame
+        if (! bufTable[clockHand].valid)
+        {
+            break;
         }
-    } while (iterations < numBufs * 2);
-    //All buffer frames are pinned, return BUFFEREXCEEDED
-    return BUFFEREXCEEDED;
 
-}
+        // is valid, check referenced bit
+        if (! bufTable[clockHand].refbit)
+        {
+            // check to see if someone has it pinned
+            if (bufTable[clockHand].pinCnt == 0)
+            {
+                // hasn't been referenced and is not pinned, use it
 
-//TODO: Nott Laoaroon
+                // remove previous entry from hash table
+                status = hashTable->remove(bufTable[clockHand].file, 
+                                           bufTable[clockHand].pageNo);
+                found = true;
+                //if (status != OK) return status;
+                break;
+            }
+        }
+        else
+        {
+            // has been referenced, clear the bit
+            bufStats.accesses++;
+            bufTable[clockHand].refbit = false;
+        }
+    }
+    
+    // check for full buffer pool
+    if (!found && numScanned >= 2*numBufs)
+    {
+        return BUFFEREXCEEDED;
+    }
+    
+    // flush any existing changes to disk if necessary
+    if (bufTable[clockHand].dirty)
+    {
+        bufStats.diskwrites++;
+
+        status = bufTable[clockHand].file->writePage(bufTable[clockHand].pageNo,
+                                                     &bufPool[clockHand]);
+        if (status != OK) return status;
+    }
+
+    // return new frame number
+    frame = clockHand;
+
+    return OK;
+} // end allocBuf
+
+	
 const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 {
-
-
-    int frameNo;
-    if(hashTable->lookup(file, PageNo, frameNo) == HASHNOTFOUND) {
-        // In this case, the page is not in the buffer
-        
-        // Allocate a buffer frame
-        Status result = allocBuf(frameNo);
-        // If the status is not OK (i.e. cant allocate new buffer), then return what the error is
-        if (result != OK) {
-            return result;
-        }
-
-        // Read the page from disk into the buffer frame
-        result = file->readPage(PageNo, &bufPool[frameNo]);
-        if (result != OK) {
-            return result;
-        }
-        // Insert the page into the hash table
-        result = hashTable->insert(file, PageNo, frameNo);
-        if(result != OK) {
-            return result;
-        }
-        // Set the description of the buffer properly
-        bufTable[frameNo].Set(file, PageNo);
-        // Return the pointer to the page on the buffer
-        page = &bufPool[frameNo];
-    } else {
-        // In this case, the page is in the buffer, at frameNo
-        // Set the appropriate refbit
-        bufTable[frameNo].refbit = 1;
-        // Increment the pincnt
-        bufTable[frameNo].pinCnt += 1;
-        // Return the pointer to the page of the buffer
+    // check to see if it is already in the buffer pool
+    // cout << "readPage called on file.page " << file << "." << PageNo << endl;
+    int frameNo = 0;
+    Status status = hashTable->lookup(file, PageNo, frameNo);
+    if (status == OK)
+    {
+        // set the referenced bit
+        bufTable[frameNo].refbit = true;
+        bufTable[frameNo].pinCnt++;
         page = &bufPool[frameNo];
     }
+    else // not in the buffer pool, must allocate a new page
+    {
+        // alloc a new frame
+        status = allocBuf(frameNo);
+        if (status != OK) return status;
+
+        // read the page into the new frame
+        bufStats.diskreads++;
+        status = file->readPage(PageNo, &bufPool[frameNo]);
+        if (status != OK) return status;
+
+        // set up the entry properly
+        bufTable[frameNo].Set(file, PageNo);
+        page = &bufPool[frameNo];
+
+        // insert in the hash table
+        status = hashTable->insert(file, PageNo, frameNo);
+        if (status != OK) { return status; }
+
+    }
+
     return OK;
-
-
 }
 
-//TODO: Nott Laoaroon
+
 const Status BufMgr::unPinPage(File* file, const int PageNo, 
 			       const bool dirty) 
 {
-
-
-    int frameNo;
-    // Check if the page is on the buffer
-    if(hashTable->lookup(file, PageNo, frameNo) == HASHNOTFOUND) {
-        // In this case, the page is not in the buffer
-        return HASHNOTFOUND;
-    } else {
-        // In this case, the page is in the buffer, at frameNo
-        // Check if it is already pinned
-        if (bufTable[frameNo].pinCnt > 0) {
-            // In this case, the page is currently pinned
-            // Decrement the pinCnt
-            bufTable[frameNo].pinCnt -= 1;
-            // If dirty, then set the dirty bit
-            if(dirty) {
-                bufTable[frameNo].dirty = true;
-            }
-        } else {
-            // In this case, the page is not currently pinned
-            return PAGENOTPINNED;
-        }
-    }
-    return OK;
-
-
-}
-
-//TODO: Kevin Zhao
-const Status BufMgr::allocPage(File* file, int& pageNo, Page*& page) 
-{
-
-    int pageNum, frameNum;
-    Status stat;
-    Error err;
-
-    stat = file->allocatePage(pageNum);
-
-    if (stat != OK) {
-        cout << "BufMgr::allocPage(), file->allocatePage()";
-        err.print(stat);
-        return stat;
-    }
-
-    stat = allocBuf(frameNum);
-
-    if (stat != OK) {
-        cout << "BufMgr::allocPage(), allocBuf()";
-        err.print(stat);
-        return stat;
-    }
-
-    stat = hashTable->insert(file, pageNum, frameNum);
-
-    if (stat != OK) {
-        cout << "BufMgr::allocPage(), hashTable->insert()";
-        err.print(stat);
-        return stat;
-    }
-
-    bufTable[frameNum].Set(file, pageNum);
-
-    pageNo = pageNum;
-    page = &bufPool[frameNum];
-
-    return OK;
-
-}
-
-const Status BufMgr::disposePage(File* file, const int pageNo) 
-{
-    // see if it is in the buffer pool
+    // lookup in hashtable
     Status status = OK;
     int frameNo = 0;
-    status = hashTable->lookup(file, pageNo, frameNo);
-    if (status == OK)
-    {
-        // clear the page
-        bufTable[frameNo].Clear();
-    }
-    status = hashTable->remove(file, pageNo);
+    status = hashTable->lookup(file, PageNo, frameNo);
+    if (status != OK) return status;
+    /*
+    if (status != OK) {cout << "lookup failed in unpinpage\n"; return status;}
+    cout << "unpinning (file.page) " << file << "." << PageNo << " with dirty flag = " << dirty << endl;
+    cout << "\t page is in frame " << frameNo << " pinCnt is " << bufTable[frameNo].pinCnt  << endl;
+    */
 
-    // deallocate it in the file
-    return file->disposePage(pageNo);
+    if (dirty == true) bufTable[frameNo].dirty = dirty;
+
+    // make sure the page is actually pinned
+    if (bufTable[frameNo].pinCnt == 0)
+    {
+        return PAGENOTPINNED;
+    }
+    else bufTable[frameNo].pinCnt--;
+    return OK;
 }
 
 const Status BufMgr::flushFile(const File* file) 
@@ -276,6 +230,49 @@ const Status BufMgr::flushFile(const File* file)
   }
   
   return OK;
+}
+
+
+
+const Status BufMgr::disposePage(File* file, const int pageNo) 
+{
+    // see if it is in the buffer pool
+    Status status = OK;
+    int frameNo = 0;
+    status = hashTable->lookup(file, pageNo, frameNo);
+    if (status == OK)
+    {
+        // clear the page
+        bufTable[frameNo].Clear();
+    }
+    status = hashTable->remove(file, pageNo);
+
+    // deallocate it in the file
+    return file->disposePage(pageNo);
+}
+
+
+const Status BufMgr::allocPage(File* file, int& pageNo, Page*& page) 
+{
+    int frameNo;
+
+    // allocate a new page in the file
+    Status status = file->allocatePage(pageNo);
+    if (status != OK)  return status; 
+
+    // alloc a new frame
+     status = allocBuf(frameNo);
+     if (status != OK) return status;
+
+     // set up the entry properly
+     bufTable[frameNo].Set(file, pageNo);
+     page = &bufPool[frameNo];
+
+     // insert in thehash table
+     status = hashTable->insert(file, pageNo, frameNo);
+     if (status != OK) { return status; }
+     // cout << "allocated page " << pageNo <<  " to file " << file << "frame is: " << frameNo  << endl;
+    return OK;
 }
 
 

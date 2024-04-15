@@ -10,13 +10,14 @@
 
 // buffer pool hash table implementation
 
-int BufHashTbl::hash(const File* file, const int pageNo)
-{
-  int value;
-  long tmp = (long)file;  // cast of pointer to the file object to an integer
-  value = (tmp + pageNo) % HTSIZE;
-  return value;
-}
+  int BufHashTbl::hash(const File* file, const int pageNo)
+  {
+    long tmp;
+    unsigned int value;
+    tmp = (long)file;  // cast of pointer to the file object to an integer
+    value = ((tmp + pageNo) % HTSIZE + HTSIZE) % HTSIZE;
+    return static_cast<int>(value);
+  }
 
 
 BufHashTbl::BufHashTbl(int htSize)
