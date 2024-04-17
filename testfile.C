@@ -305,7 +305,12 @@ int main(int argc, char **argv)
             i++;
         }
         
-        scan1->endScan();
+        Status x;
+        x = scan1->endScan();
+        if(x != OK) {
+            printf("error====\n");
+            error.print(x);
+        }
         delete scan1;
 
         cout << "scan saw " << i << " records " << endl;
